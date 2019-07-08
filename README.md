@@ -35,3 +35,9 @@ Hover over the run's name, click on the three-dot menu icon that appears to the 
 - Implement a GAN
 - Different loss functions
 - Data augmentation
+
+
+## Help Got
+
+- https://github.com/tensorflow/tensorflow/issues/13822 [Convolutional layers cannot be used multiple times]
+- https://github.com/keras-team/keras/issues/3465 [	Combining Pretrained model with new layers ]
