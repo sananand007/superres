@@ -1,4 +1,3 @@
-
 import cv2
 import glob
 import numpy as np
@@ -15,10 +14,7 @@ import subprocess
 import os
 from PIL import Image
 import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras import layers
 from tensorflow.keras import backend as K
-from tensorflow.keras.callbacks import Callback
 import wandb
 from wandb.keras import WandbCallback
 
@@ -63,6 +59,8 @@ from keras.optimizers import Adagrad
 from keras.applications.vgg16 import VGG16
 from keras.applications.resnet50 import ResNet50
 from keras.models import Model
+from keras.utils import plot_model
+from keras.optimizers import Adam
 
 def get_available_gpus():
     local_device_protos = device_lib.list_local_devices()
@@ -75,13 +73,11 @@ configuration = tf.ConfigProto( device_count = {'GPU': 1 , 'CPU': 56} )
 sess = tf.Session(config=configuration) 
 K.set_session(sess)
 
-##########################################################################
 
-#run = wandb.init(project='superres')
 run = wandb.init(project='respick')
 config = run.config
 
-config.num_epochs = 50
+config.num_epochs = 1
 config.batch_size = 32
 config.input_height = 32
 config.input_width = 32
@@ -171,69 +167,119 @@ class ImageLogger(Callback):
         }, commit=False)
 
 
-'''
-Residual Dense Network for Image Super-Resolution
-'''
 custom_objects={'perceptual_distance': perceptual_distance, 'image_psnr':image_psnr}
 modelFile = '/home/sandeeppanku/Public/Code/superres/models/modelcl.h5'
 
 model = load_model(modelFile, custom_objects=custom_objects)
 
 # Pop out all the un-necessary layers
+
 for i in range(16):
 	model.layers.pop()
-Upsample1  = UpSampling2D(name='upsamplingNew1')(model.layers[-1].output)
-conv2d_142 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
-Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_142)
-conv2d_143 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
-Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
-conv2d_144 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
 
+x = model.get_layer('add_11').output
+x = Dense(3, activation='relu')(x)
+
+'''
+Upsample1  = UpSampling2D(name='upsamplingNew1')(x)
+conv2d_14x = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
+Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_14x)
+conv2d_14y = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
+Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_14y)
+conv2d_14z = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
+'''
+model_base = Model(model.input, x)
+#Upsample1  = UpSampling2D(name='upsamplingNew1')(model.layers[-1].output)
+#conv2d_142 = Conv2D(3, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
+#print(f'shape here {conv2d_142.shape}')
+
+# Upsample1  = UpSampling2D(name='upsamplingNew1')(model.layers[-1].output)
+# conv2d_142 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
+# Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_142)
+# conv2d_143 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
+# Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
+# conv2d_144 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
+
+
+
+#Tunedconv2d_1 = Conv2D(3, (3,3), padding='same', activation='relu', name='conv_new1')(model.layers[-1].output)
+#print(f"chnaged here {Tunedconv2d_1.shape}")
+#print("big Model tuned", "\n", model_base.summary())
+
+# Output size - [32, 32, 64]
 
 ## Adding resnet pre-trained layers
-img_shape = (256,256,3)
-resnetmdl = ResNet50(include_top=False, weights=None, input_tensor=conv2d_144, input_shape=img_shape, classes=None)
+#img_shape = (64,64,3)
+input1 	= Input(shape=(config.input_width, config.input_height, 3), name = 'input')
+# conv1 	= Conv2D(64, (3, 3), padding='same', name='conx1')(input1)
+# print(f"Model here {input.shape}")
 
-newModel = Model(inputs=model.inputs, outputs = resnetmdl)
-
-print(f'Model is {newModel.summary()}')
-
-'''
-Split and Merge Model -- Try later
-'''
-#model 	= Sequential()
-# input1 	= Input(shape=(config.input_width, config.input_height, 3))
-# input2 	= Input(shape=(config.input_width, config.input_height, 3))
-
-# conv1 	= Conv2D(64, (3, 3), padding='same')(input1)
-# activ1 	= Activation('relu')(conv1)
-# conv2 	= Conv2D(64, (3, 3), padding='same')(activ1)
-# activ2 	= Activation('relu')(conv2)
-# conv3 	= Conv2D(256, (3, 3), padding='same')(activ2)
-# activ3 	= Activation('relu')(conv3)
-# conv4 	= Conv2D(64, (3, 3), padding='same')(activ3)
-# activ4 	= Activation('relu')(conv4)
-# merge1 	= concatenate([activ2, activ4])
-# model 	= Model(inputs=[input1, input2])
-#print(f'model summary {model.summary()}')
+resnetmdl = ResNet50(include_top=False, weights='imagenet', input_tensor=input1)
+print(f'length of layers {len(resnetmdl.layers)}')
 
 '''
-Ways to add the modify a saved model
+Reduce the number of resnet layers to decrease the number of trainable parameters
 '''
+for i in range(137):
+	resnetmdl.layers.pop()
 
-# newModel = Model(inputs=model.inputs, outputs = model.layers[-1].output)
-# newModel.set_weights(model.get_weights())
-# weights_bak = model.layers[-1].get_weights()
-# nb_classes = model.layers[-1].output_shape[-1]
-#model.layers[-1].outbound_nodes = []
-#model.outputs = [model.layers[-1].output]
-#newModel.add(model)
-#newModel.set_weights(model.get_weights())
-#newModel.add(Conv2D(3, (3, 3), activation='relu', padding='same'))
+print("resnet model tuned", "\n", resnetmdl.summary())
+Upsample1 = UpSampling2D(name='upsamplingNew1')(resnetmdl.layers[-1].output)
+conv2d_142 = Conv2D(512, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
+Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_142)
+conv2d_143 = Conv2D(256, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
+Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
+conv2d_144 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
+Upsample4  = UpSampling2D(name='upsamplingNew4')(conv2d_144)
+conv2d_145 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new4')(Upsample4)
+Upsample5  = UpSampling2D(name='upsamplingNew5')(conv2d_145)
+conv2d_146 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new5')(Upsample5)
+# Upsample6  = UpSampling2D(name='upsamplingNew6')(conv2d_146)
+# conv2d_147 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new6')(Upsample6)
+# Upsample7  = UpSampling2D(name='upsamplingNew7')(conv2d_147)
+# conv2d_148 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new7')(Upsample7)
+#Upsample8  = UpSampling2D(name='upsamplingNew8')(conv2d_148)
+#conv2d_149 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new8')(Upsample8)
 
+print(f'conv2d_148 {conv2d_146.shape}')
+#resnetmdl = ResNet50(include_top=False, weights=None, input_tensor=conv2d_142, input_shape=img_shape, classes=None)
+
+base_out = model_base(conv2d_146)
+print(f'base_out {base_out.shape}')
+
+# model.outputs = [model.layers[-1].output]
+# model.layers[-1].outbound_nodes = []
+
+
+
+#current
+
+newModel = Model(inputs=input1, outputs = base_out)
+print(f'newModel {newModel.summary()}')
+
+
+
+#newModel1 =  tf.keras.Sequential()
+#newModel2 =  Conv2D(3, (3,3), padding='same', activation='relu', name='conv_new1')(model.layers[-1].output)
+#newModel1.add(newModel2.layers[-1])
+#newModel2.add(resnetmdl)
+#print(f"new model shape here {newModel1.shape}")
+#finalModel = Model(inputs = [newModel2], outputs = [resnetmdl])
+
+# merged = Model(inputs=[model.layers.input],outputs=[model.layers[-1].output,newModel)
+
+# newModel.summary()
+#TODO - these Upsamplings below can be put into a function/decorator
+# newModel = Model(inputs=input1, outputs = conv2d_148)
+
+# print(f'Model is {newModel.summary()}')
+
+def get_optimizer():
+	adam = Adam(lr=1E-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, amsgrad=True)
+	return adam
 
 # DONT ALTER metrics=[perceptual_distance]
-newModel.compile(optimizer='adam', loss='mse',
+newModel.compile(optimizer=get_optimizer(), loss='mse',
               metrics=[perceptual_distance, image_psnr])
 
 newModel.fit_generator(image_generator(config.batch_size, train_dir),

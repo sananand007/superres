@@ -1,14 +1,3 @@
-
-import cv2
-import glob
-import numpy as np
-from keras import regularizers
-from keras.models import load_model, Model
-from keras.applications.vgg16 import VGG16
-from keras.layers import Conv2D, Input, Lambda, add
-from keras.callbacks import ModelCheckpoint, TensorBoard
-from keras.optimizers import Adam, RMSprop
-#rom utilities import random_crop, ssim, content_fn, test_edsr, ImageLoader
 import random
 import glob
 import subprocess
@@ -21,6 +10,40 @@ from tensorflow.keras import backend as K
 from tensorflow.keras.callbacks import Callback
 import wandb
 from wandb.keras import WandbCallback
+
+'''
+#TODO 
+New Metrics to be added
+
+epoch
+9
+examples
+
+graph
+
+image_psnr - toadd
+20.349
+
+loss
+0.06469
+
+lr - toadd
+0.00005
+
+perceptual_distance
+53.628
+
+val_image_psnr --to add
+19.755
+
+val_loss
+0.06835
+
+val_perceptual_distance
+56.453
+
+Chnages 
+'''
 
 '''
 Mods
@@ -46,23 +69,11 @@ import cv2
 
 # Added for CNN model
 #from keras.layers.convolutional import Conv3D
-
 from keras.layers.convolutional_recurrent import ConvLSTM2D
 from keras.layers.normalization import BatchNormalization
 from keras.layers import Flatten, Dense, Reshape
 import tensorflow as tf
 from tensorflow.python.client import device_lib
-from keras.models import Sequential
-from keras.layers import Dense, Activation
-from keras.layers import InputLayer
-from keras.models import Model
-from keras.layers import Concatenate, Dense, LSTM, Input, concatenate
-from keras.optimizers import Adagrad
-
-## Adding a vgg16
-from keras.applications.vgg16 import VGG16
-from keras.applications.resnet50 import ResNet50
-from keras.models import Model
 
 def get_available_gpus():
     local_device_protos = device_lib.list_local_devices()
@@ -81,7 +92,7 @@ K.set_session(sess)
 run = wandb.init(project='respick')
 config = run.config
 
-config.num_epochs = 50
+config.num_epochs = 3
 config.batch_size = 32
 config.input_height = 32
 config.input_width = 32
@@ -171,74 +182,40 @@ class ImageLogger(Callback):
         }, commit=False)
 
 
-'''
-Residual Dense Network for Image Super-Resolution
-'''
 custom_objects={'perceptual_distance': perceptual_distance, 'image_psnr':image_psnr}
 modelFile = '/home/sandeeppanku/Public/Code/superres/models/modelcl.h5'
+#model = model_from_json(open(modelFile).read())
+#model.load_weights(os.path.join(os.path.dirname(modelFile), modelFile))
 
+'''
+Golden Model
 model = load_model(modelFile, custom_objects=custom_objects)
-
-# Pop out all the un-necessary layers
-for i in range(16):
-	model.layers.pop()
-Upsample1  = UpSampling2D(name='upsamplingNew1')(model.layers[-1].output)
-conv2d_142 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
-Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_142)
-conv2d_143 = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
-Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
-conv2d_144 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
-
-
-## Adding resnet pre-trained layers
-img_shape = (256,256,3)
-resnetmdl = ResNet50(include_top=False, weights=None, input_tensor=conv2d_144, input_shape=img_shape, classes=None)
-
-newModel = Model(inputs=model.inputs, outputs = resnetmdl)
-
-print(f'Model is {newModel.summary()}')
-
 '''
-Split and Merge Model -- Try later
-'''
-#model 	= Sequential()
-# input1 	= Input(shape=(config.input_width, config.input_height, 3))
-# input2 	= Input(shape=(config.input_width, config.input_height, 3))
+#print(f'Shape of model {model.summary()}')
 
-# conv1 	= Conv2D(64, (3, 3), padding='same')(input1)
-# activ1 	= Activation('relu')(conv1)
-# conv2 	= Conv2D(64, (3, 3), padding='same')(activ1)
-# activ2 	= Activation('relu')(conv2)
-# conv3 	= Conv2D(256, (3, 3), padding='same')(activ2)
-# activ3 	= Activation('relu')(conv3)
-# conv4 	= Conv2D(64, (3, 3), padding='same')(activ3)
-# activ4 	= Activation('relu')(conv4)
-# merge1 	= concatenate([activ2, activ4])
-# model 	= Model(inputs=[input1, input2])
-#print(f'model summary {model.summary()}')
 
-'''
-Ways to add the modify a saved model
-'''
 
-# newModel = Model(inputs=model.inputs, outputs = model.layers[-1].output)
-# newModel.set_weights(model.get_weights())
-# weights_bak = model.layers[-1].get_weights()
-# nb_classes = model.layers[-1].output_shape[-1]
-#model.layers[-1].outbound_nodes = []
-#model.outputs = [model.layers[-1].output]
-#newModel.add(model)
-#newModel.set_weights(model.get_weights())
-#newModel.add(Conv2D(3, (3, 3), activation='relu', padding='same'))
+model = Sequential()
+model.add(Conv2D(3, (3, 3), activation='relu', padding='same',
+                        input_shape=(config.input_width, config.input_height, 3)))
+model.add(UpSampling2D())
+model.add(Conv2D(3, (3, 3), activation='relu', padding='same'))
+model.add(UpSampling2D())
+model.add(Conv2D(3, (3, 3), activation='relu', padding='same'))
+model.add(UpSampling2D())
+model.add(Conv2D(3, (3, 3), activation='relu', padding='same'))
 
 
 # DONT ALTER metrics=[perceptual_distance]
-newModel.compile(optimizer='adam', loss='mse',
+model.compile(optimizer='adam', loss='mse',
               metrics=[perceptual_distance, image_psnr])
 
-newModel.fit_generator(image_generator(config.batch_size, train_dir),
+model.fit_generator(image_generator(config.batch_size, train_dir),
                     steps_per_epoch=config.steps_per_epoch,
                     epochs=config.num_epochs, callbacks=[
                         ImageLogger(), WandbCallback()],
                     validation_steps=config.val_steps_per_epoch,
                     validation_data=val_generator)
+
+#model.save(os.path.join(wandb.run.dir, "model_hell1.h5"))
+

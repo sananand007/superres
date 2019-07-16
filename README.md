@@ -40,4 +40,7 @@ Hover over the run's name, click on the three-dot menu icon that appears to the 
 ## Help Got
 
 - https://github.com/tensorflow/tensorflow/issues/13822 [Convolutional layers cannot be used multiple times]
-- https://github.com/keras-team/keras/issues/3465 [	Combining Pretrained model with new layers ]
+- https://github.com/keras-team/keras/issues/3465 [Combining Pretrained model with new layers]
+- https://github.com/keras-team/keras/issues/8772 [Loading a trained model, popping the last two layers, and then saving it]
+- https://stackoverflow.com/questions/49750670/kerras-the-definition-of-a-model-changes-when-the-input-tensor-of-the-model-is-t
+- https://stackoverflow.com/questions/47678108/keras-use-one-model-output-as-another-model-input [very very helpful]
