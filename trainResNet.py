@@ -61,6 +61,7 @@ from keras.applications.resnet50 import ResNet50
 from keras.models import Model
 from keras.utils import plot_model
 from keras.optimizers import Adam
+from keras.initializers import glorot_uniform
 
 def get_available_gpus():
     local_device_protos = device_lib.list_local_devices()
@@ -77,8 +78,8 @@ K.set_session(sess)
 run = wandb.init(project='respick')
 config = run.config
 
-config.num_epochs = 1
-config.batch_size = 32
+config.num_epochs = 10
+config.batch_size = 8
 config.input_height = 32
 config.input_width = 32
 config.output_height = 256
@@ -155,6 +156,39 @@ def image_psnr(im1, im2):
     return psnr
 
 
+def glorot_uniform():
+	return glorot_uniform(seed=None)
+
+
+def freeze_session(session, keep_var_names=None, output_names=None, clear_devices=True):
+    """
+    Freezes the state of a session into a pruned computation graph.
+
+    Creates a new computation graph where variable nodes are replaced by
+    constants taking their current value in the session. The new graph will be
+    pruned so subgraphs that are not necessary to compute the requested
+    outputs are removed.
+    @param session The TensorFlow session to be frozen.
+    @param keep_var_names A list of variable names that should not be frozen,
+                          or None to freeze all the variables in the graph.
+    @param output_names Names of the relevant graph outputs.
+    @param clear_devices Remove the device directives from the graph for better portability.
+    @return The frozen graph definition.
+    """
+    graph = session.graph
+    with graph.as_default():
+        freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
+        output_names = output_names or []
+        output_names += [v.op.name for v in tf.global_variables()]
+        input_graph_def = graph.as_graph_def()
+        if clear_devices:
+            for node in input_graph_def.node:
+                node.device = ""
+        frozen_graph = tf.graph_util.convert_variables_to_constants(
+            session, input_graph_def, output_names, freeze_var_names)
+        return frozen_graph
+
+
 class ImageLogger(Callback):
     def on_epoch_end(self, epoch, logs):
         preds = self.model.predict(in_sample_images)
@@ -168,27 +202,64 @@ class ImageLogger(Callback):
 
 
 custom_objects={'perceptual_distance': perceptual_distance, 'image_psnr':image_psnr}
-modelFile = '/home/sandeeppanku/Public/Code/superres/models/modelcl.h5'
-
+modelFile = '/home/sandeeppanku/Public/Code/superres/models/modelcl2.h5'
 model = load_model(modelFile, custom_objects=custom_objects)
+
+# Create, compile and train model and load the Tensorflow graph...
+store_Model_dir = '/home/sandeeppanku/Public/Code/superres/models/'
+frozen_graph = freeze_session(K.get_session(),
+                              output_names=[out.op.name for out in model.outputs])
+
+tf.train.write_graph(frozen_graph, store_Model_dir, "my_model.pb", as_text=False)
+
+from tensorflow.python.platform import gfile
+with tf.Session() as sess:
+	#load model from pb file
+	with gfile.FastGFile(store_Model_dir+'/'+'my_model.pb', 'rb') as f:
+		graph_def = tf.GraphDef()
+		graph_def.ParseFromString(f.read())
+		sess.graph.as_default()
+		g_in = tf.import_graph_def(graph_def)
+	writer = tf.summary.FileWriter(store_Model_dir+'/log/', sess.graph)
+	#writer.add_graph(sess.graph)
+	writer.flush()
+	writer.close()
+	print('\n == Output Operation == \n')
+	# for op in sess.graph.get_operations():
+	# 	print(op)
+
+
+print("big Model tuned", "\n", model.summary())
 
 # Pop out all the un-necessary layers
 
-for i in range(16):
+for i in range(0):
 	model.layers.pop()
 
-x = model.get_layer('add_11').output
-x = Dense(3, activation='relu')(x)
+x = model.get_layer('conv2d_141').output
 
+
+# Do this later
+#x = Dense(3, activation='relu')(x)
 '''
-Upsample1  = UpSampling2D(name='upsamplingNew1')(x)
-conv2d_14x = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
-Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_14x)
-conv2d_14y = Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
-Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_14y)
-conv2d_14z = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
+conv2d_14x 		= Conv2D(32, (3,3), padding='same', activation='relu', name='conv_new1x')(x)
+conv2d_14x2 	= Conv2D(32, (3,3), padding='same', activation='relu', name='conv_new2x')(conv2d_14x)
+conv2d_14x3 	= Conv2D(32, (3,3), padding='same', activation='relu', name='conv_new3x')(conv2d_14x2)
+Upsample1  		= UpSampling2D(name='upsamplingNew1')(conv2d_14x3)
+
+conv2d_14y 		= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1y')(Upsample1)
+conv2d_14y2 	= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2y')(conv2d_14y)
+conv2d_14y3 	= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new3y')(conv2d_14y2)
+Upsample2  		= UpSampling2D(name='upsamplingNew2')(conv2d_14y3)
+
+conv2d_14z 		= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new1z')(Upsample2)
+conv2d_14z1 	= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new2z')(conv2d_14z)
+conv2d_14z2 	= Conv2D(64, (3,3), padding='same', activation='relu', name='conv_new3z')(conv2d_14z1)
+Upsample3  		= UpSampling2D(name='upsamplingNew3')(conv2d_14z2)
+
+conv2d_final 	= Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_newfinal')(Upsample3)
 '''
-model_base = Model(model.input, x)
+#model_base = Model(model.input, x)
 #Upsample1  = UpSampling2D(name='upsamplingNew1')(model.layers[-1].output)
 #conv2d_142 = Conv2D(3, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
 #print(f'shape here {conv2d_142.shape}')
@@ -204,10 +275,13 @@ model_base = Model(model.input, x)
 
 #Tunedconv2d_1 = Conv2D(3, (3,3), padding='same', activation='relu', name='conv_new1')(model.layers[-1].output)
 #print(f"chnaged here {Tunedconv2d_1.shape}")
-#print("big Model tuned", "\n", model_base.summary())
+#print("big Model tuned", "\n", model.summary())
 
 # Output size - [32, 32, 64]
 
+'''
+Resnet model starts at this point
+'''
 ## Adding resnet pre-trained layers
 #img_shape = (64,64,3)
 input1 	= Input(shape=(config.input_width, config.input_height, 3), name = 'input')
@@ -220,7 +294,7 @@ print(f'length of layers {len(resnetmdl.layers)}')
 '''
 Reduce the number of resnet layers to decrease the number of trainable parameters
 '''
-for i in range(137):
+for i in range(157):
 	resnetmdl.layers.pop()
 
 print("resnet model tuned", "\n", resnetmdl.summary())
@@ -228,12 +302,15 @@ Upsample1 = UpSampling2D(name='upsamplingNew1')(resnetmdl.layers[-1].output)
 conv2d_142 = Conv2D(512, (3,3), padding='same', activation='relu', name='conv_new1')(Upsample1)
 Upsample2  = UpSampling2D(name='upsamplingNew2')(conv2d_142)
 conv2d_143 = Conv2D(256, (3,3), padding='same', activation='relu', name='conv_new2')(Upsample2)
-Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
-conv2d_144 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
-Upsample4  = UpSampling2D(name='upsamplingNew4')(conv2d_144)
-conv2d_145 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new4')(Upsample4)
-Upsample5  = UpSampling2D(name='upsamplingNew5')(conv2d_145)
-conv2d_146 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new5')(Upsample5)
+conv2d_144 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new3')(conv2d_143)
+conv2d_145 = Conv2D(32, (3,3), padding='same', activation='relu',  name='conv_new4')(conv2d_144)
+conv2d_146 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new5')(conv2d_145)
+# Upsample3  = UpSampling2D(name='upsamplingNew3')(conv2d_143)
+# conv2d_144 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new3')(Upsample3)
+# Upsample4  = UpSampling2D(name='upsamplingNew4')(conv2d_144)
+# conv2d_145 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new4')(Upsample4)
+# Upsample5  = UpSampling2D(name='upsamplingNew5')(conv2d_145)
+# conv2d_146 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new5')(Upsample5)
 # Upsample6  = UpSampling2D(name='upsamplingNew6')(conv2d_146)
 # conv2d_147 = Conv2D(64, (3,3), padding='same', activation='relu',  name='conv_new6')(Upsample6)
 # Upsample7  = UpSampling2D(name='upsamplingNew7')(conv2d_147)
@@ -241,20 +318,21 @@ conv2d_146 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new
 #Upsample8  = UpSampling2D(name='upsamplingNew8')(conv2d_148)
 #conv2d_149 = Conv2D(3, (3,3), padding='same', activation='relu',  name='conv_new8')(Upsample8)
 
-print(f'conv2d_148 {conv2d_146.shape}')
+print(f'conv2d_final shape {conv2d_146.shape}')
 #resnetmdl = ResNet50(include_top=False, weights=None, input_tensor=conv2d_142, input_shape=img_shape, classes=None)
-
-base_out = model_base(conv2d_146)
-print(f'base_out {base_out.shape}')
-
 # model.outputs = [model.layers[-1].output]
 # model.layers[-1].outbound_nodes = []
 
 
-
+'''
+reversing the stack of the layers here, bighModel on top of the resnet mdel
+'''
+#model_base = Model(input1, conv2d_146)
+#base_out = model_base(conv2d_14z)
+#print(f'base_out {base_out.shape}')
 #current
 
-newModel = Model(inputs=input1, outputs = base_out)
+newModel = Model(inputs=model.input, outputs = x)
 print(f'newModel {newModel.summary()}')
 
 

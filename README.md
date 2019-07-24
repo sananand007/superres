@@ -32,9 +32,14 @@ Hover over the run's name, click on the three-dot menu icon that appears to the 
 
 ## Things to try
 
-- Implement a GAN
+- Implement a GAN for this, the top model tried that
 - Different loss functions
 - Data augmentation
+
+## Final Trials to wrap up and Todo in future
+- My score is #14 using the long resnet model on wandb.com
+- I am currently trying to fit the dataset to the ISR RRDN package (https://idealo.github.io/image-super-resolution/#usage), the ISR package is only made to work with the example dataset and the utils need to be modified, due to BW crunch I have to come back to this part ## TODO
+- Applying GAN on top of this - THis is the other apprach I want to try and check the performance
 
 
 ## Help Got
@@ -44,3 +49,4 @@ Hover over the run's name, click on the three-dot menu icon that appears to the 
 - https://github.com/keras-team/keras/issues/8772 [Loading a trained model, popping the last two layers, and then saving it]
 - https://stackoverflow.com/questions/49750670/kerras-the-definition-of-a-model-changes-when-the-input-tensor-of-the-model-is-t
 - https://stackoverflow.com/questions/47678108/keras-use-one-model-output-as-another-model-input [very very helpful]
+- https://github.com/pipidog/keras_to_tensorflow/blob/master/keras_to_tensorflow.py
